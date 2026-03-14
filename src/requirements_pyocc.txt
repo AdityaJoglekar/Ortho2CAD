@@ -1,0 +1,11 @@
+matplotlib
+gdown
+trimesh
+h5py
+Pillow
+plyfile
+scipy
+joblib
+scikit-learn
+cairosvg
+seaborn
