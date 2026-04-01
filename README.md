@@ -39,5 +39,6 @@ Please use the provided `run.sh` script in the `src` folder for training (SFT an
 
 We would like to thank and acknowledge referenced codes from https://github.com/QwenLM/Qwen3-VL/tree/main and https://github.com/anniedoris/CAD-Coder/tree/main.
 
+## Bibtex
 
-
+If you find this code useful, please cite our paper (TBD, once published we will update this section). Aditya Joglekar, Amit Regmi, Kenji Shimada, Levent Burak Kara. Ortho2CAD: 3D CAD generation from orthographic drawings using vision language models. TBD.
