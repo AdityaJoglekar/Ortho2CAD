@@ -262,7 +262,7 @@ class PeriodicCadIoUEvalCallback(TrainerCallback):
         self.use_inprocess_test = use_inprocess_test
         self.limit_eval_to_gpu0 = limit_eval_to_gpu0
         self.question_file = question_file or f"../inference/{test_set_name}.jsonl"
-        self.image_folder = image_folder or "../inference/test100_images"
+        self.image_folder = image_folder or "../inference/test100_images_f360"
         self.temperature = temperature
         self.top_p = top_p
         self.num_beams = num_beams
@@ -437,7 +437,41 @@ class PeriodicCadIoUEvalCallback(TrainerCallback):
         question_path = os.path.expanduser(self.question_file)
         with open(question_path, "r", encoding="utf-8") as f:
             questions = [json.loads(line) for line in f if line.strip()]
-        step_by_qid = {q.get("question_id"): q.get("step") for q in questions if q.get("question_id") is not None}
+
+        def _resolve_gt_step_from_image_id(image_value: object) -> str | None:
+            if not image_value:
+                return None
+
+            # Map an image path/id like ".../123_abc_0000.png" -> "123_abc_0000.step".
+            base = os.path.basename(str(image_value))
+            stem = os.path.splitext(base)[0]
+
+            repo_root = Path(__file__).resolve().parents[3]
+            gt_steps_dir = str(repo_root / "inference" / "test100_gt_steps_f360")
+
+            for cand in (
+                os.path.join(gt_steps_dir, stem + ".step"),
+                os.path.join(gt_steps_dir, stem + ".stp"),
+                os.path.join(gt_steps_dir, base),
+            ):
+                if cand and os.path.exists(cand):
+                    return cand
+            return None
+
+        step_by_qid = {}
+        for q in questions:
+            qid = q.get("question_id")
+            if qid is None:
+                continue
+
+            step_path = q.get("step")
+            if step_path and os.path.isabs(step_path) and os.path.exists(step_path):
+                step_by_qid[qid] = step_path
+                continue
+
+            image_value = q.get("image") or q.get("image_id") or q.get("imageId")
+            resolved = _resolve_gt_step_from_image_id(image_value)
+            step_by_qid[qid] = resolved or step_path
 
         merge_path = self._merge_path(model_id)
         out_dir = self._inference_output_dir(model_id)
@@ -1444,7 +1478,7 @@ def train_grpo():
             use_inprocess_test=True,
             limit_eval_to_gpu0=False,
             question_file="../inference/f360rec_test_data_subset100.jsonl",
-            image_folder=None,
+            image_folder="../inference/test100_images_f360",
         )
     )
  
