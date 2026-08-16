@@ -102,7 +102,7 @@ def main(model_path, test_set_name, ground_truth_steps_dir):
     for g in tqdm(os.listdir(model_generated_steps_dir)):
         print(f"Processing: {g}")
         question_id = g[:-5]
-        if 'cadquery' in test_set_name:
+        if 'cadquery' in test_set_name or 'deepcad' in test_set_name:
             orig_id = find_image_by_question_id(test_jsonl, int(question_id))
         else:
             orig_id = find_image_by_question_id(test_jsonl, question_id)

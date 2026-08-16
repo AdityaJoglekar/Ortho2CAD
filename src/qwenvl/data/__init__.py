@@ -11,9 +11,15 @@ F360REC = {
     "data_path": "../Data/f360rec",
 }
 
+ZeroToCAD1m = {
+    "annotation_path": "../Data/ZeroToCAD1m/cadquery_zerotocad1m_train_data.json",
+    "data_path": "../Data/ZeroToCAD1m/train",
+}
+
 data_dict = {
     "orthocode": ORTHOCODE,
     "f360rec": F360REC,
+    "zerotocad1m": ZeroToCAD1m,
 }
 
 

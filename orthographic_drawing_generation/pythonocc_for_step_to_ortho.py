@@ -7,7 +7,8 @@ import os
 import sys
 import argparse
 import multiprocessing
-
+import queue
+import cairosvg
 # pythonocc-core imports
 from OCC.Core.STEPControl import STEPControl_Reader
 from OCC.Core.IFSelect import IFSelect_RetDone
@@ -127,7 +128,7 @@ class OrthographicProjector:
             print("Error: No valid shape found in STEP file")
             return None
         
-        print(f"Successfully loaded STEP file: {file_path}")
+        # print(f"Successfully loaded STEP file: {file_path}")
         return shape
     
     def make_coordinate_system(self, origin, view_dir, up_dir):
@@ -248,7 +249,7 @@ class OrthographicProjector:
             except:
                 pass
             
-            print(f"  HLR processed: {len(visible_edges)} visible compounds, {len(hidden_edges)} hidden compounds")
+            # print(f"  HLR processed: {len(visible_edges)} visible compounds, {len(hidden_edges)} hidden compounds")
             
             return {
                 'visible': visible_edges,
@@ -321,35 +322,35 @@ class OrthographicProjector:
             
             explorer.Next()
         
-        print(f"    Extracted {len(edges_2d)} edge curves from {edge_count} edges")
+        # print(f"    Extracted {len(edges_2d)} edge curves from {edge_count} edges")
         return edges_2d
     
     def generate_orthographic_view(self, view_direction, view_name="view"):
         """Generate a complete orthographic view with visible and hidden lines."""
-        print(f"Generating {view_name} view...")
+        # print(f"Generating {view_name} view...")
         
         # Create projector
-        print(f"  Creating projector for direction {view_direction.X():.1f}, {view_direction.Y():.1f}, {view_direction.Z():.1f}")
+        # print(f"  Creating projector for direction {view_direction.X():.1f}, {view_direction.Y():.1f}, {view_direction.Z():.1f}")
         projector = self.create_projector(view_direction)
         
         # Generate HLR edges
-        print(f"  Running HLR algorithm...")
+        # print(f"  Running HLR algorithm...")
         hlr_result = self.generate_hlr_edges(projector)
         
         # Convert to 2D point lists
-        print(f"  Converting visible edges to 2D...")
+        # print(f"  Converting visible edges to 2D...")
         visible_edges = []
         for i, compound in enumerate(hlr_result['visible']):
-            print(f"    Processing visible compound {i+1}/{len(hlr_result['visible'])}")
+            # print(f"    Processing visible compound {i+1}/{len(hlr_result['visible'])}")
             visible_edges.extend(self.edges_to_2d_points(compound))
         
-        print(f"  Converting hidden edges to 2D...")
+        # print(f"  Converting hidden edges to 2D...")
         hidden_edges = []
         for i, compound in enumerate(hlr_result['hidden']):
-            print(f"    Processing hidden compound {i+1}/{len(hlr_result['hidden'])}")
+            # print(f"    Processing hidden compound {i+1}/{len(hlr_result['hidden'])}")
             hidden_edges.extend(self.edges_to_2d_points(compound))
         
-        print(f"  ✓ {view_name} view completed: {len(visible_edges)} visible, {len(hidden_edges)} hidden edge groups")
+        # print(f"  ✓ {view_name} view completed: {len(visible_edges)} visible, {len(hidden_edges)} hidden edge groups")
         
         return {
             'visible': visible_edges,
@@ -629,7 +630,7 @@ class SVGExporter:
                 'priority': 1,
             })
 
-        print(f"    Proposing {len(dims)} overall dimensions in {view_name} view")
+        # print(f"    Proposing {len(dims)} overall dimensions in {view_name} view")
         return dims
 
     def _collect_segments(self, edges, round_to=2):
@@ -814,7 +815,7 @@ class SVGExporter:
         # Find key dimensions for this view
         key_dimensions = self._find_key_dimensions(view_name, scaled_visible, scaled_hidden, actual_dimensions)
         
-        print(f"  Found {len(key_dimensions)} dimensions for {view_name} view")
+        # print(f"  Found {len(key_dimensions)} dimensions for {view_name} view")
         
         # Sort by priority (lower number = higher priority)
         key_dimensions.sort(key=lambda d: d.get('priority', 5))
@@ -859,7 +860,7 @@ class SVGExporter:
         
         # Calculate global scale factor for all views
         global_scale = self._calculate_global_scale(views_data, view_width, view_height)
-        print(f"Using global scale factor: {global_scale:.4f}")
+        # print(f"Using global scale factor: {global_scale:.4f}")
         
         # Canvas size for larger figures
         canvas_width = 800
@@ -919,7 +920,7 @@ class SVGExporter:
     <rect width="{canvas_width}" height="{canvas_height}" fill="white"/>
     
 '''
-        # <!-- Main title -->
+         # <!-- Main title -->
         # <text x="{canvas_width//2}" y="30" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold">Orthographic Views</text>
         
         # Position views according to technical drawing standards with larger spacing
@@ -1019,14 +1020,18 @@ def find_step_files(directory):
     return step_files
 
 
-def create_output_structure(steps_dir, output_dir, step_file_path):
+def create_output_structure(steps_dir, output_dir, step_file_path, use_ortho_name=False):
     """Create the corresponding output directory structure and return the output file path."""
     # Get relative path from steps directory
     rel_path = os.path.relpath(step_file_path, steps_dir)
     
     # Change extension to .svg
-    rel_path_no_ext = os.path.splitext(rel_path)[0]
-    output_rel_path = rel_path_no_ext + ".svg"
+    if use_ortho_name:
+        rel_dir = os.path.dirname(rel_path)
+        output_rel_path = os.path.join(rel_dir, "ortho.svg") if rel_dir else "ortho.svg"
+    else:
+        rel_path_no_ext = os.path.splitext(rel_path)[0]
+        output_rel_path = rel_path_no_ext + ".svg"
     
     # Create full output path
     output_file_path = os.path.join(output_dir, output_rel_path)
@@ -1036,6 +1041,67 @@ def create_output_structure(steps_dir, output_dir, step_file_path):
     os.makedirs(output_file_dir, exist_ok=True)
     
     return output_file_path
+
+
+def process_step_file_job(index, total, step_file, steps_dir, output_dir, use_ortho_name, timeout, verbose):
+    """Process one STEP file and convert the generated SVG to PNG."""
+    print(f"\n[{index}/{total}] Processing: {step_file}")
+
+    output_file_path = create_output_structure(
+        steps_dir,
+        output_dir,
+        step_file,
+        use_ortho_name=use_ortho_name,
+    )
+
+    if process_single_step_file(step_file, output_file_path, verbose=verbose, timeout_seconds=timeout):
+        print(f"  ✓ Successfully processed")
+        cairosvg.svg2png(url=str(output_file_path), write_to=str(output_file_path.replace(".svg", ".png")))
+        print(f"  ✓ Successfully converted to PNG")
+        return True
+
+    print(f"  ✗ Failed to process")
+    return False
+
+
+def chunk_step_files(step_files, worker_count):
+    """Split STEP files into balanced worker chunks."""
+    chunks = [[] for _ in range(worker_count)]
+    for index, step_file in enumerate(step_files, 1):
+        chunks[(index - 1) % worker_count].append((index, step_file))
+    return [chunk for chunk in chunks if chunk]
+
+
+def process_step_file_chunk(
+    worker_id,
+    chunk,
+    total,
+    steps_dir,
+    output_dir,
+    use_ortho_name,
+    timeout,
+    verbose,
+    result_queue,
+):
+    """Process a chunk of STEP files in one worker process."""
+    print(f"Worker {worker_id} started with {len(chunk)} files", flush=True)
+    for index, step_file in chunk:
+        try:
+            ok = process_step_file_job(
+                index,
+                total,
+                step_file,
+                steps_dir,
+                output_dir,
+                use_ortho_name,
+                timeout,
+                verbose,
+            )
+        except Exception as exc:
+            ok = False
+            print(f"  ✗ Worker {worker_id} failed on {step_file}: {type(exc).__name__}: {exc}", flush=True)
+        result_queue.put((index, ok))
+    print(f"Worker {worker_id} finished", flush=True)
 
 
 def main():
@@ -1050,6 +1116,8 @@ Examples:
   python pythonocc_for_step_to_ortho.py --input my_steps --output my_svgs
   python pythonocc_for_step_to_ortho.py -i /path/to/step/files -o /path/to/output
   python pythonocc_for_step_to_ortho.py --timeout 30 --verbose
+  python pythonocc_for_step_to_ortho.py --workers 16
+  python pythonocc_for_step_to_ortho.py --use-ortho-name
         """
     )
     
@@ -1074,8 +1142,21 @@ Examples:
     parser.add_argument(
         '--timeout', '-t',
         type=int,
-        default=10,
-        help='Timeout in seconds for processing each STEP file (default: 10)'
+        default=60,
+        help='Timeout in seconds for processing each STEP file (default: 60)'
+    )
+    
+    parser.add_argument(
+        '--workers', '-w',
+        type=int,
+        default=16,
+        help='Number of chunked worker processes to run (default: 16)'
+    )
+    
+    parser.add_argument(
+        '--use-ortho-name',
+        action='store_true',
+        help='Save outputs as ortho.svg and ortho.png instead of using each STEP file basename'
     )
     
     args = parser.parse_args()
@@ -1083,6 +1164,9 @@ Examples:
     # Configuration
     steps_dir = args.input
     output_dir = args.output
+    if args.workers < 1:
+        print("Error: --workers must be >= 1")
+        return 1
     
     # Check if steps directory exists
     if not os.path.exists(steps_dir):
@@ -1107,20 +1191,84 @@ Examples:
     # Process each STEP file
     successful = 0
     failed = 0
-    
-    for i, step_file in enumerate(step_files, 1):
-        print(f"\n[{i}/{len(step_files)}] Processing: {step_file}")
-        
-        # Create output file path maintaining directory structure
-        output_file_path = create_output_structure(steps_dir, output_dir, step_file)
 
-        # Process the file
-        if process_single_step_file(step_file, output_file_path, verbose=args.verbose, timeout_seconds=args.timeout):
-            successful += 1
-            print(f"  ✓ Successfully processed")
-        else:
-            failed += 1
-            print(f"  ✗ Failed to process")
+    worker_count = min(args.workers, len(step_files))
+    if worker_count > 1:
+        chunks = chunk_step_files(step_files, worker_count)
+        expected_results = sum(len(chunk) for chunk in chunks)
+        result_queue = multiprocessing.Queue()
+        processes = []
+        print(f"Processing with {len(chunks)} chunked worker processes")
+
+        for worker_id, chunk in enumerate(chunks, 1):
+            process = multiprocessing.Process(
+                target=process_step_file_chunk,
+                args=(
+                    worker_id,
+                    chunk,
+                    len(step_files),
+                    steps_dir,
+                    output_dir,
+                    args.use_ortho_name,
+                    args.timeout,
+                    args.verbose,
+                    result_queue,
+                ),
+            )
+            process.start()
+            processes.append(process)
+
+        received_results = 0
+        while received_results < expected_results:
+            try:
+                _, ok = result_queue.get(timeout=1.0)
+            except queue.Empty:
+                if not any(process.is_alive() for process in processes):
+                    break
+                continue
+            received_results += 1
+            if ok:
+                successful += 1
+            else:
+                failed += 1
+
+        for process in processes:
+            process.join()
+
+        while True:
+            try:
+                _, ok = result_queue.get_nowait()
+            except queue.Empty:
+                break
+            received_results += 1
+            if ok:
+                successful += 1
+            else:
+                failed += 1
+
+        missing_results = expected_results - received_results
+        if missing_results > 0:
+            failed += missing_results
+            print(f"  ✗ Missing {missing_results} worker results; counted as failed")
+
+        crashed_workers = sum(1 for process in processes if process.exitcode not in (0, None))
+        if crashed_workers:
+            print(f"  ✗ {crashed_workers} worker process(es) exited non-zero")
+    else:
+        for i, step_file in enumerate(step_files, 1):
+            if process_step_file_job(
+                i,
+                len(step_files),
+                step_file,
+                steps_dir,
+                output_dir,
+                args.use_ortho_name,
+                args.timeout,
+                args.verbose,
+            ):
+                successful += 1
+            else:
+                failed += 1
     
     # Summary
     print(f"\n" + "="*60)

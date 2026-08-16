@@ -20,7 +20,8 @@ grad_accum_steps=4
 entry_file=qwenvl/train/train_qwen.py
 
 # Dataset configuration
-datasets=orthocode
+datasets=orthocode  #for the DeepCAD dataset
+# datasets=zerotocad1m  #for the ZeroToCAD1m dataset
 
 # Output configuration
 run_name="qwen3vl8b_5epoch"

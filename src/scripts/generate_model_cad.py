@@ -6,8 +6,16 @@ from multiprocessing import Pool, cpu_count
 from tqdm import tqdm
 import time
 import re
+import signal
 
 ROOT_CHECKPOINT_DIR = "../inference/inference_results"
+EXAMPLE_TIMEOUT_SECONDS = 120
+
+class ExampleTimeoutError(TimeoutError):
+    pass
+
+def _timeout_handler(signum, frame):
+    raise ExampleTimeoutError
 
 def wait_for_file(file_path, timeout=2, check_interval=0.1):
     """Waits for a file to exist for a limited time."""
@@ -21,41 +29,56 @@ def wait_for_file(file_path, timeout=2, check_interval=0.1):
 def process_cad(args_tuple):
     """Function to write and run a single Python script."""
     code, id_, code_dir, stl_dir, step_dir, pc_dir_base, pc_reps, code_language = args_tuple
-    
-    if "```python" in code:
-        code = re.sub(r"```[a-zA-Z]*\n|```", "", code)
-
-    # Checks if the code can be run, without any modifications. Checking for syntax errors
-    file_path = f"{code_dir}/{id_}.py"
-    write_python_file(code, file_path)
-    valid_code = run_python_script(file_path)
-    
+    valid_code = False
     valid_stl = False
     valid_pc = False
-    if valid_code: # only move to stl generation if there is valid code
-        # Adds code to generate stl, checks that STL is generated.
-        if code_language == "pythonocc":
-            code += f"\nwrite_stl_file(body, \"{stl_dir}/{id_}.stl\")"
-            raise ValueError("Implement STEP generation")
-        elif code_language == "cadquery":
-            code += f"\nimport cadquery as cq\ncq.exporters.export(solid, \"{stl_dir}/{id_}.stl\")\n"
-            code += f"\nimport cadquery as cq\ncq.exporters.export(solid, \"{step_dir}/{id_}.step\")\n"
-        else:
-            raise TypeError("CAD code language not supported!")
-        write_python_file(code, f"{code_dir}/{id_}.py")
-        valid_stl = run_python_script(f"{code_dir}/{id_}.py")
-        if not wait_for_file(f"{stl_dir}/{id_}.stl"): # checks that the .stl was actually created, adds a little delay in case it's slow to save. #TODO implement this also for the python files generation?
-            valid_stl = False
-            
-        # Generate point clouds
-        if valid_stl:
-            for i in range(pc_reps):
-                try:
-                    out_pc = convert_stl_to_point_cloud(f"{stl_dir}/{id_}.stl", f"{pc_dir_base}_{i}/{id_}.ply", 2000, seed=42+i)
-                    if os.path.isfile(f"{pc_dir_base}_{i}/{id_}.ply"):
-                        valid_pc = True # Only no errors and pc file exists should this be set to true
-                except Exception as e:
-                    print(f"{id_} failed point cloud generation")
+
+    previous_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.alarm(EXAMPLE_TIMEOUT_SECONDS)
+    start_time = time.monotonic()
+    try:
+        def remaining_timeout():
+            return max(1, int(EXAMPLE_TIMEOUT_SECONDS - (time.monotonic() - start_time)))
+
+        if "```python" in code:
+            code = re.sub(r"```[a-zA-Z]*\n|```", "", code)
+
+        # Checks if the code can be run, without any modifications. Checking for syntax errors
+        file_path = f"{code_dir}/{id_}.py"
+        write_python_file(code, file_path)
+        valid_code = run_python_script(file_path, timeout=remaining_timeout())
+        
+        if valid_code: # only move to stl generation if there is valid code
+            # Adds code to generate stl, checks that STL is generated.
+            if code_language == "pythonocc":
+                code += f"\nwrite_stl_file(body, \"{stl_dir}/{id_}.stl\")"
+                raise ValueError("Implement STEP generation")
+            elif code_language == "cadquery":
+                code += f"\nimport cadquery as cq\ncq.exporters.export(solid, \"{stl_dir}/{id_}.stl\")\n"
+                code += f"\nimport cadquery as cq\ncq.exporters.export(solid, \"{step_dir}/{id_}.step\")\n"
+                # code += f"\nimport cadquery as cq\ncq.exporters.export(result, \"{stl_dir}/{id_}.stl\")\n"
+                # code += f"\nimport cadquery as cq\ncq.exporters.export(result, \"{step_dir}/{id_}.step\")\n"
+            else:
+                raise TypeError("CAD code language not supported!")
+            write_python_file(code, f"{code_dir}/{id_}.py")
+            valid_stl = run_python_script(f"{code_dir}/{id_}.py", timeout=remaining_timeout())
+            if not wait_for_file(f"{stl_dir}/{id_}.stl"): # checks that the .stl was actually created, adds a little delay in case it's slow to save. #TODO implement this also for the python files generation?
+                valid_stl = False
+                
+            # Generate point clouds
+            if valid_stl:
+                for i in range(pc_reps):
+                    try:
+                        out_pc = convert_stl_to_point_cloud(f"{stl_dir}/{id_}.stl", f"{pc_dir_base}_{i}/{id_}.ply", 2000, seed=42+i)
+                        if os.path.isfile(f"{pc_dir_base}_{i}/{id_}.ply"):
+                            valid_pc = True # Only no errors and pc file exists should this be set to true
+                    except Exception as e:
+                        print(f"{id_} failed point cloud generation")
+    except ExampleTimeoutError:
+        print(f"{id_} timed out after {EXAMPLE_TIMEOUT_SECONDS} seconds")
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
     return valid_code, valid_stl, valid_pc, id_
 
