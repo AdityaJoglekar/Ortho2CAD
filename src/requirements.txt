@@ -11,3 +11,6 @@ shortuuid
 trl
 ijson
 openai
+modelscope
+setuptools==81.0.0
+anthropic
