@@ -32,6 +32,9 @@ The script creates these conda environments:
 - If ZeroToCAD1m STEP files are required: download and prepare data from https://huggingface.co/datasets/ADSKAILab/Zero-To-CAD-1m.
 - Please refer to the `orthographic_drawing_generation` folder for instructions and code for generating orthographic drawings given STEP files.
 
+## Models
+The SFT and RL models are available at https://huggingface.co/AdityaJoglekar/Ortho2CAD_SFT_RL/tree/main for inference and evaluation.
+
 ## Training, inference and evaluation
 
 Please use the provided `run.sh` script in the `src` folder for training (SFT and/or RL), inference and evaluation workflows. Please see the comments inside `run.sh` for detailed instructions and available options.
