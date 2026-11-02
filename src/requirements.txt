@@ -8,7 +8,7 @@ torchcodec==0.2
 peft==0.17.1
 tensorboard
 shortuuid
-trl
+trl==0.29.0
 ijson
 openai
 modelscope
